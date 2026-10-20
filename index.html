@@ -37,7 +37,7 @@ input:focus,select:focus,textarea:focus{outline:none}
 @keyframes dotPop{0%{transform:scale(.3)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
 @keyframes glow{0%,100%{box-shadow:0 2px 16px rgba(0,122,255,.2)}50%{box-shadow:0 2px 24px rgba(0,122,255,.35)}}
 @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
-@keyframes pinBtnFlash{0%{background:rgba(0,122,255,.18)}100%{background:var(--fill)}}
+@keyframes pinFlash{0%{background:rgba(0,122,255,.22)}100%{background:var(--fill)}}
 
 .spring{animation:springIn .5s cubic-bezier(.25,.1,.25,1) both}
 .fade{animation:fadeIn .25s ease both}
@@ -73,14 +73,15 @@ input:focus,select:focus,textarea:focus{outline:none}
   pointer-events:none;
 }
 
-.sheet-bg{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.18);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);animation:fadeIn .2s ease both}
+.sheet-bg{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.18);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+.sheet-bg.anim{animation:fadeIn .2s ease both}
 .sheet{
   position:fixed;bottom:0;left:0;right:0;z-index:81;
   max-height:92vh;background:var(--bg);
   border-radius:16px 16px 0 0;
   overflow-y:auto;-webkit-overflow-scrolling:touch;
-  animation:slideSheet .35s cubic-bezier(.25,.1,.25,1) both;
 }
+.sheet.anim{animation:slideSheet .35s cubic-bezier(.25,.1,.25,1) both}
 .sheet-handle{width:36px;height:5px;border-radius:3px;background:rgba(60,60,67,.2);margin:8px auto 0}
 .sheet-nav{
   position:sticky;top:0;z-index:5;
@@ -99,10 +100,10 @@ input:focus,select:focus,textarea:focus{outline:none}
   width:100%;aspect-ratio:1;border-radius:50%;border:none;
   background:var(--fill);font-size:28px;font-weight:400;color:var(--label);
   cursor:pointer;font-family:inherit;
-  transition:background .1s,transform .1s;
+  transition:background .12s,transform .12s;
 }
-.pin-btn:active,.pin-btn.kb-flash{background:rgba(0,122,255,.18);transform:scale(.9)}
-.pin-btn.kb-flash{animation:pinBtnFlash .25s ease-out}
+.pin-btn:active{background:rgba(0,122,255,.22);transform:scale(.9)}
+.pin-btn.kb-active{background:rgba(0,122,255,.22);transform:scale(.9)}
 
 .card-tap{transition:transform .15s cubic-bezier(.25,.1,.25,1),box-shadow .15s}
 .card-tap:active{transform:scale(.95)!important}
@@ -146,6 +147,12 @@ const S={
   _pin:'',_pinStep:1,_pinFirst:'',_pinErr:false,_pinBusy:false,_cPwd:''
 };
 
+/* Track whether pin sheet is already visible (prevent re-animation) */
+let _pinSheetShown=false;
+/* Track which digit to flash AFTER render */
+let _kbFlashDigit=null;
+let _kbFlashBack=false;
+
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
 function greeting(){const h=new Date().getHours();if(h<6)return'🌙 夜深了';if(h<12)return'☀️ 早安';if(h<18)return'🌤️ 午安';return'🌙 晚安';}
@@ -176,37 +183,37 @@ function syncForms(){
 /* ═══════════════════════════════════════════ */
 /*  KEYBOARD SUPPORT FOR PIN PAD               */
 /* ═══════════════════════════════════════════ */
-function flashPinBtn(digit){
-  const btn=document.querySelector(`.pin-btn[data-a="pinDigit"][data-d="${digit}"]`);
-  if(!btn)return;
-  btn.classList.remove('kb-flash');
-  void btn.offsetWidth;
-  btn.classList.add('kb-flash');
-  setTimeout(()=>btn.classList.remove('kb-flash'),250);
-}
-function flashBackBtn(){
-  const btn=document.querySelector('.pin-btn[data-a="pinBack"]');
-  if(!btn)return;
-  btn.classList.remove('kb-flash');
-  void btn.offsetWidth;
-  btn.classList.add('kb-flash');
-  setTimeout(()=>btn.classList.remove('kb-flash'),250);
+function applyKbFlash(){
+  if(_kbFlashDigit!==null){
+    const btn=document.querySelector('.pin-btn[data-a="pinDigit"][data-d="'+_kbFlashDigit+'"]');
+    if(btn){
+      btn.classList.add('kb-active');
+      setTimeout(()=>{btn.classList.remove('kb-active');},150);
+    }
+    _kbFlashDigit=null;
+  }
+  if(_kbFlashBack){
+    const btn=document.querySelector('.pin-btn[data-a="pinBack"]');
+    if(btn){
+      btn.classList.add('kb-active');
+      setTimeout(()=>{btn.classList.remove('kb-active');},150);
+    }
+    _kbFlashBack=false;
+  }
 }
 
 document.addEventListener('keydown',function(e){
-  /* Only intercept when PIN modal is open */
   if(!S.pinLogin&&!S.pinSet)return;
-  /* Prevent typing into hidden inputs etc */
   const tag=e.target.tagName;
   if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;
 
   if(/^[0-9]$/.test(e.key)){
     e.preventDefault();
-    flashPinBtn(e.key);
+    _kbFlashDigit=e.key;
     act('pinDigit',{d:e.key});
   }else if(e.key==='Backspace'||e.key==='Delete'){
     e.preventDefault();
-    flashBackBtn();
+    _kbFlashBack=true;
     act('pinBack');
   }else if(e.key==='Escape'){
     e.preventDefault();
@@ -219,9 +226,27 @@ function render(){
   const fid=document.activeElement?.id||null;
   let ss=null,se=null;
   try{ss=document.activeElement?.selectionStart;se=document.activeElement?.selectionEnd;}catch(e){}
-  document.getElementById('app').innerHTML=S.loading&&!S.loaded?loadingHTML():(S.view==='main'?mainHTML():settingsHTML())+(S.pinLogin||S.pinSet?pinHTML():'')+(S.editModal?editHTML():'')+(S.pwdModal?pwdHTML():'')+(S.delConfirm?delHTML():'')+(S.noticeEdit?noticeEditHTML():'')+(S.noticeDel?noticeDelHTML():'')+(S.toast?toastHTML():'');
+
+  document.getElementById('app').innerHTML=
+    S.loading&&!S.loaded?loadingHTML():
+    (S.view==='main'?mainHTML():settingsHTML())+
+    (S.pinLogin||S.pinSet?pinHTML():'')+
+    (S.editModal?editHTML():'')+
+    (S.pwdModal?pwdHTML():'')+
+    (S.delConfirm?delHTML():'')+
+    (S.noticeEdit?noticeEditHTML():'')+
+    (S.noticeDel?noticeDelHTML():'')+
+    (S.toast?toastHTML():'');
+
+  /* Update sheet-shown flag AFTER innerHTML so next render knows */
+  _pinSheetShown=(S.pinLogin||S.pinSet);
+
   bind();initMarquee();
+
   if(fid){const el=document.getElementById(fid);if(el){el.focus();if(typeof ss==='number')try{el.setSelectionRange(ss,se);}catch(e){}}}
+
+  /* Apply keyboard flash AFTER DOM is built */
+  requestAnimationFrame(applyKbFlash);
 }
 
 function initMarquee(){const t=document.querySelector('.marquee-track');if(!t)return;const n=S.notices.filter(n=>!n.hidden);if(!n.length)return;t.style.setProperty('--dur',Math.max(18,n.length*22)+'s');requestAnimationFrame(()=>t.classList.add('run'));}
@@ -417,11 +442,11 @@ function iosField(label,id,val,ph){
 }
 
 /* ═══════════════════════════════════════════ */
-/*  MODALS                                     */
+/*  PIN MODAL                                  */
 /* ═══════════════════════════════════════════ */
-
 function pinHTML(){
   const isLogin=S.pinLogin;
+  const firstShow=!_pinSheetShown;
   let title,sub;
   if(isLogin){title='管理員登入';sub='輸入 6 位數 PIN';}
   else if(S._pinStep===1){title='設定新 PIN';sub='請輸入 6 位數字';}
@@ -438,8 +463,14 @@ function pinHTML(){
     dots+=`<div style="${st}"></div>`;
   }
 
-  let h=`<div class="sheet-bg"></div>`;
-  h+=`<div class="sheet" style="max-height:auto;padding-bottom:calc(20px + var(--safe-b));${S._pinErr?'animation:shake .4s ease;':''}">`;
+  /* Determine sheet animation: first show = slide in; error = shake; otherwise none */
+  let sheetAnim='';
+  if(firstShow) sheetAnim='animation:slideSheet .35s cubic-bezier(.25,.1,.25,1) both;';
+  else if(S._pinErr) sheetAnim='animation:shake .4s ease;';
+  else sheetAnim='animation:none;';
+
+  let h=`<div class="sheet-bg${firstShow?' anim':''}"></div>`;
+  h+=`<div class="sheet" style="max-height:none;padding-bottom:calc(20px + var(--safe-b));${sheetAnim}">`;
   h+=`<div class="sheet-handle"></div>`;
   h+=`<div class="sheet-nav"><div class="left"></div><div class="center">${title}</div><div class="right"><button data-a="pinClose" class="sheet-link">取消</button></div></div>`;
 
@@ -448,8 +479,7 @@ function pinHTML(){
   h+=`<div style="font-size:13px;color:var(--sub);margin-bottom:20px">${sub}</div>`;
   h+=`<div style="display:flex;justify-content:center;gap:14px;margin-bottom:8px">${dots}</div>`;
   if(S._pinErr)h+=`<div style="color:var(--red);font-size:13px;font-weight:600;margin-top:8px">${isLogin?'PIN 錯誤':'兩次唔一樣，重新嚟過'}</div>`;
-  /* Keyboard hint for PC users */
-  h+=`<div style="font-size:11px;color:var(--sub);margin-top:12px;opacity:.6">⌨️ 可直接用鍵盤輸入數字</div>`;
+  h+=`<div style="font-size:11px;color:var(--sub);margin-top:12px;opacity:.5">⌨️ 可直接用鍵盤輸入數字</div>`;
   h+=`</div>`;
 
   h+=`<div style="padding:20px 48px 24px;max-width:340px;margin:0 auto">`;
@@ -462,12 +492,15 @@ function pinHTML(){
   return h;
 }
 
+/* ═══════════════════════════════════════════ */
+/*  OTHER MODALS                               */
+/* ═══════════════════════════════════════════ */
 function editHTML(){
   const c=S.editModal;const isNew=!c.id;
   const gr=GRADS[c.color]||GRADS.blue;
 
-  let h=`<div class="sheet-bg" data-a="closeEdit"></div>`;
-  h+=`<div class="sheet scroll-hide">`;
+  let h=`<div class="sheet-bg anim" data-a="closeEdit"></div>`;
+  h+=`<div class="sheet anim scroll-hide">`;
   h+=`<div class="sheet-handle"></div>`;
   h+=`<div class="sheet-nav"><div class="left"><button data-a="closeEdit" class="sheet-link">取消</button></div><div class="center">${isNew?'新增卡片':'編輯卡片'}</div><div class="right"><button data-a="saveCard" class="sheet-link" style="font-weight:700">儲存</button></div></div>`;
 
@@ -522,8 +555,8 @@ function noticeEditHTML(){
   const n=S.noticeEdit;const isNew=!n.id;
   const to=NTYPES.map(t=>`<option value="${t.key}" ${n.type===t.key?'selected':''}>${t.emoji} ${t.label}</option>`).join('');
 
-  let h=`<div class="sheet-bg" data-a="closeN"></div>`;
-  h+=`<div class="sheet">`;
+  let h=`<div class="sheet-bg anim" data-a="closeN"></div>`;
+  h+=`<div class="sheet anim">`;
   h+=`<div class="sheet-handle"></div>`;
   h+=`<div class="sheet-nav"><div class="left"><button data-a="closeN" class="sheet-link">取消</button></div><div class="center">${isNew?'新增公告':'編輯公告'}</div><div class="right"><button data-a="saveN" class="sheet-link" style="font-weight:700">儲存</button></div></div>`;
   h+=`<div style="padding:16px">`;
@@ -538,8 +571,8 @@ function noticeEditHTML(){
 
 function pwdHTML(){
   const{card:c,err}=S.pwdModal;
-  let h=`<div class="sheet-bg" data-a="closePwd"></div>`;
-  h+=`<div class="sheet" style="max-height:auto">`;
+  let h=`<div class="sheet-bg anim" data-a="closePwd"></div>`;
+  h+=`<div class="sheet anim" style="max-height:none">`;
   h+=`<div class="sheet-handle"></div>`;
   h+=`<div style="text-align:center;padding:28px 24px 32px">`;
   h+=`<div style="font-size:44px;margin-bottom:10px">${c.icon||'🔒'}</div>`;
@@ -556,8 +589,8 @@ function pwdHTML(){
 
 function delHTML(){
   const c=S.delConfirm;
-  let h=`<div class="sheet-bg" data-a="cancelDel"></div>`;
-  h+=`<div class="sheet" style="max-height:auto">`;
+  let h=`<div class="sheet-bg anim" data-a="cancelDel"></div>`;
+  h+=`<div class="sheet anim" style="max-height:none">`;
   h+=`<div class="sheet-handle"></div>`;
   h+=`<div style="text-align:center;padding:28px 24px 12px">`;
   h+=`<div style="font-size:44px;margin-bottom:10px">${c.icon} </div>`;
@@ -573,8 +606,8 @@ function delHTML(){
 
 function noticeDelHTML(){
   const n=S.noticeDel;
-  let h=`<div class="sheet-bg" data-a="cancelNDel"></div>`;
-  h+=`<div class="sheet" style="max-height:auto">`;
+  let h=`<div class="sheet-bg anim" data-a="cancelNDel"></div>`;
+  h+=`<div class="sheet anim" style="max-height:none">`;
   h+=`<div class="sheet-handle"></div>`;
   h+=`<div style="text-align:center;padding:28px 24px 12px">`;
   h+=`<div style="font-size:17px;font-weight:700;margin-bottom:4px">確定刪除呢個公告？</div>`;
@@ -619,7 +652,7 @@ function act(a,d={}){
   case'checkPwd':{const inp=document.getElementById('cPwd');if(inp&&inp.value===S.pwdModal.card.pwd){const u=S.pwdModal.card.url;S._cPwd='';S.pwdModal=null;render();u?window.open(u,'_blank'):toast('⚠️ 未設定連結');}else{S.pwdModal.err=true;render();}break;}
   case'closePwd':S._cPwd='';S.pwdModal=null;render();break;
 
-  case'admin':{if(S.set.pwd&&!S.admin){S._pin='';S._pinErr=false;S._pinBusy=false;S.pinLogin=true;render();}else{S.admin=true;S.view='settings';render();}break;}
+  case'admin':{if(S.set.pwd&&!S.admin){S._pin='';S._pinErr=false;S._pinBusy=false;S.pinLogin=true;_pinSheetShown=false;render();}else{S.admin=true;S.view='settings';render();}break;}
 
   case'pinDigit':{
     if(S._pinBusy||S._pin.length>=PIN_LEN)return;
@@ -628,12 +661,12 @@ function act(a,d={}){
       S._pinBusy=true;
       setTimeout(()=>{
         if(S.pinLogin){
-          if(S._pin===S.set.pwd){S._pin='';S.pinLogin=false;S._pinBusy=false;S.admin=true;S.view='settings';render();}
+          if(S._pin===S.set.pwd){S._pin='';S.pinLogin=false;S._pinBusy=false;_pinSheetShown=false;S.admin=true;S.view='settings';render();}
           else{S._pinErr=true;render();setTimeout(()=>{S._pin='';S._pinErr=false;S._pinBusy=false;render();},700);}
         }else if(S.pinSet){
           if(S._pinStep===1){S._pinFirst=S._pin;S._pin='';S._pinStep=2;S._pinBusy=false;render();}
           else{
-            if(S._pin===S._pinFirst){S.set.pwd=S._pin;S._pin='';S._pinFirst='';S._pinStep=1;S.pinSet=false;S._pinBusy=false;save();toast('✅ PIN 已設定');}
+            if(S._pin===S._pinFirst){S.set.pwd=S._pin;S._pin='';S._pinFirst='';S._pinStep=1;S.pinSet=false;S._pinBusy=false;_pinSheetShown=false;save();toast('✅ PIN 已設定');}
             else{S._pinErr=true;render();setTimeout(()=>{S._pin='';S._pinErr=false;S._pinStep=1;S._pinFirst='';S._pinBusy=false;render();},800);}
           }
         }
@@ -642,8 +675,8 @@ function act(a,d={}){
     break;
   }
   case'pinBack':if(!S._pinBusy&&S._pin.length>0){S._pin=S._pin.slice(0,-1);S._pinErr=false;render();}break;
-  case'pinClose':S._pin='';S._pinStep=1;S._pinFirst='';S._pinErr=false;S._pinBusy=false;S.pinLogin=false;S.pinSet=false;render();break;
-  case'startPinSet':S._pin='';S._pinStep=1;S._pinFirst='';S._pinErr=false;S._pinBusy=false;S.pinSet=true;render();break;
+  case'pinClose':S._pin='';S._pinStep=1;S._pinFirst='';S._pinErr=false;S._pinBusy=false;S.pinLogin=false;S.pinSet=false;_pinSheetShown=false;render();break;
+  case'startPinSet':S._pin='';S._pinStep=1;S._pinFirst='';S._pinErr=false;S._pinBusy=false;S.pinSet=true;_pinSheetShown=false;render();break;
   case'clearPin':S.set.pwd='';save();toast('🔓 PIN 已清除');break;
 
   case'back':S.view='main';S.admin=false;render();break;

@@ -25,7 +25,6 @@ body{
 input,select,textarea{font-family:inherit;font-size:16px}
 input:focus,select:focus,textarea:focus{outline:none}
 
-/* ── iOS Spring Animations ── */
 @keyframes springIn{0%{opacity:0;transform:translateY(20px) scale(.97)}60%{transform:translateY(-2px) scale(1.005)}100%{opacity:1;transform:none}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes slideSheet{from{transform:translateY(100%)}to{transform:translateY(0)}}
@@ -38,11 +37,11 @@ input:focus,select:focus,textarea:focus{outline:none}
 @keyframes dotPop{0%{transform:scale(.3)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
 @keyframes glow{0%,100%{box-shadow:0 2px 16px rgba(0,122,255,.2)}50%{box-shadow:0 2px 24px rgba(0,122,255,.35)}}
 @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+@keyframes pinBtnFlash{0%{background:rgba(0,122,255,.18)}100%{background:var(--fill)}}
 
 .spring{animation:springIn .5s cubic-bezier(.25,.1,.25,1) both}
 .fade{animation:fadeIn .25s ease both}
 
-/* ── Shared ── */
 .scroll-hide::-webkit-scrollbar{width:0;height:0}.scroll-hide{scrollbar-width:none}
 .glass{background:rgba(255,255,255,.72);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
 .glass-heavy{background:rgba(242,242,247,.82);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
@@ -60,12 +59,10 @@ input:focus,select:focus,textarea:focus{outline:none}
 }
 .ios-btn:active{transform:scale(.96);opacity:.7}
 
-/* ── Marquee ── */
 .marquee-wrap{overflow:hidden;white-space:nowrap}
 .marquee-track{display:inline-flex;white-space:nowrap;will-change:transform}
 .marquee-track.run{animation:marquee var(--dur,20s) linear infinite}
 
-/* ── Toast ── */
 .ios-toast{
   position:fixed;top:calc(54px + var(--safe-t));left:50%;z-index:200;
   background:rgba(50,50,50,.88);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);
@@ -76,7 +73,6 @@ input:focus,select:focus,textarea:focus{outline:none}
   pointer-events:none;
 }
 
-/* ── Sheet Modal ── */
 .sheet-bg{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.18);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);animation:fadeIn .2s ease both}
 .sheet{
   position:fixed;bottom:0;left:0;right:0;z-index:81;
@@ -99,16 +95,15 @@ input:focus,select:focus,textarea:focus{outline:none}
 .sheet-link{font-size:15px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;font-family:inherit;padding:4px 0}
 .sheet-link:active{opacity:.4}
 
-/* ── PIN Pad ── */
 .pin-btn{
   width:100%;aspect-ratio:1;border-radius:50%;border:none;
   background:var(--fill);font-size:28px;font-weight:400;color:var(--label);
   cursor:pointer;font-family:inherit;
   transition:background .1s,transform .1s;
 }
-.pin-btn:active{background:rgba(118,118,128,.22);transform:scale(.9)}
+.pin-btn:active,.pin-btn.kb-flash{background:rgba(0,122,255,.18);transform:scale(.9)}
+.pin-btn.kb-flash{animation:pinBtnFlash .25s ease-out}
 
-/* ── Card tap ── */
 .card-tap{transition:transform .15s cubic-bezier(.25,.1,.25,1),box-shadow .15s}
 .card-tap:active{transform:scale(.95)!important}
 </style>
@@ -119,7 +114,6 @@ input:focus,select:focus,textarea:focus{outline:none}
 const API='https://script.google.com/macros/s/AKfycbwiRcNYAfGlzaQQ66B3LmRhR72m-b1HO3_Ogp_5fDRh8m2sKVyhzCs2lWpG7l0D7YHR_Q/exec';
 const PIN_LEN=6;
 
-/* ── iOS System Colors for Cards ── */
 const GRADS={
   blue:{bg:'linear-gradient(135deg,#007AFF,#5AC8FA)',shadow:'rgba(0,122,255,.25)',l:'系統藍'},
   purple:{bg:'linear-gradient(135deg,#5856D6,#AF52DE)',shadow:'rgba(88,86,214,.25)',l:'系統紫'},
@@ -179,6 +173,47 @@ function syncForms(){
   if(S.noticeEdit){const t=document.getElementById('nText'),tp=document.getElementById('nType');if(t)S.noticeEdit.text=t.value;if(tp)S.noticeEdit.type=tp.value;}
 }
 
+/* ═══════════════════════════════════════════ */
+/*  KEYBOARD SUPPORT FOR PIN PAD               */
+/* ═══════════════════════════════════════════ */
+function flashPinBtn(digit){
+  const btn=document.querySelector(`.pin-btn[data-a="pinDigit"][data-d="${digit}"]`);
+  if(!btn)return;
+  btn.classList.remove('kb-flash');
+  void btn.offsetWidth;
+  btn.classList.add('kb-flash');
+  setTimeout(()=>btn.classList.remove('kb-flash'),250);
+}
+function flashBackBtn(){
+  const btn=document.querySelector('.pin-btn[data-a="pinBack"]');
+  if(!btn)return;
+  btn.classList.remove('kb-flash');
+  void btn.offsetWidth;
+  btn.classList.add('kb-flash');
+  setTimeout(()=>btn.classList.remove('kb-flash'),250);
+}
+
+document.addEventListener('keydown',function(e){
+  /* Only intercept when PIN modal is open */
+  if(!S.pinLogin&&!S.pinSet)return;
+  /* Prevent typing into hidden inputs etc */
+  const tag=e.target.tagName;
+  if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;
+
+  if(/^[0-9]$/.test(e.key)){
+    e.preventDefault();
+    flashPinBtn(e.key);
+    act('pinDigit',{d:e.key});
+  }else if(e.key==='Backspace'||e.key==='Delete'){
+    e.preventDefault();
+    flashBackBtn();
+    act('pinBack');
+  }else if(e.key==='Escape'){
+    e.preventDefault();
+    act('pinClose');
+  }
+});
+
 function render(){
   syncForms();
   const fid=document.activeElement?.id||null;
@@ -206,27 +241,22 @@ function mainHTML(){
   const g=greeting();
   let h=`<div style="min-height:100vh;background:var(--bg)">`;
 
-  /* ── iOS Header with glass blur ── */
   h+=`<div style="background:linear-gradient(160deg,#007AFF,#5856D6);position:relative;overflow:hidden">`;
-  /* Decorative blobs */
   h+=`<div style="position:absolute;top:-30px;right:-20px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.08)"></div>`;
   h+=`<div style="position:absolute;bottom:20px;left:-30px;width:100px;height:100px;border-radius:50%;background:rgba(90,200,250,.1)"></div>`;
   h+=`<div style="position:absolute;top:40px;right:40%;width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.2)"></div>`;
-  /* Content */
   h+=`<div style="position:relative;padding:60px 24px 48px">`;
   h+=`<div class="spring" style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.15);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border-radius:20px;padding:5px 12px;margin-bottom:12px">
     <span style="font-size:12px;font-weight:600;color:rgba(255,255,255,.8)">${g}</span></div>`;
   h+=`<div class="sf-large spring" style="color:#fff;margin-bottom:4px;animation-delay:.04s">${esc(S.set.title)}</div>`;
   h+=`<div class="spring" style="font-size:15px;font-weight:500;color:rgba(255,255,255,.55);letter-spacing:-.1px;animation-delay:.08s">${esc(S.set.sub)}</div>`;
   h+=`</div>`;
-  /* Wave */
   h+=`<svg style="display:block;margin-top:-1px" viewBox="0 0 1440 48" preserveAspectRatio="none"><path d="M0,20Q360,48,720,18T1440,26V48H0Z" fill="var(--bg)"/></svg>`;
   h+=`</div>`;
 
-  /* ── Notice Bar ── */
   const an=S.notices.filter(n=>!n.hidden);
   if(an.length){
-    h+=`<div style="margin:-4px 16px 0;border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04)" class="spring" >`;
+    h+=`<div style="margin:-4px 16px 0;border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04)" class="spring">`;
     h+=`<div style="background:var(--card);display:flex;align-items:center">`;
     h+=`<div style="padding:10px 14px;display:flex;align-items:center;gap:6px;border-right:.5px solid var(--sep);flex-shrink:0">`;
     h+=`<span style="font-size:13px">📢</span>`;
@@ -244,7 +274,6 @@ function mainHTML(){
     h+=`</div></div></div></div>`;
   }
 
-  /* ── Cards ── */
   h+=`<div style="padding:20px 16px 120px;max-width:500px;margin:0 auto">`;
   const cats={};S.cards.forEach(c=>{const k=c.cat||'其他';if(!cats[k])cats[k]=[];cats[k].push(c);});
   const sorted=Object.keys(cats).sort((a,b)=>{const ia=CATS.indexOf(a),ib=CATS.indexOf(b);return(ia<0?99:ia)-(ib<0?99:ib);});
@@ -267,7 +296,6 @@ function mainHTML(){
       cats[cat].forEach((c,i)=>{
         const gr=GRADS[c.color]||GRADS.blue;
         h+=`<div class="card-tap spring" style="border-radius:16px;padding:16px;cursor:pointer;position:relative;overflow:hidden;background:${gr.bg};box-shadow:0 4px 16px ${gr.shadow};min-height:110px;animation-delay:${(ci*.06)+(i+1)*.04}s" data-a="open" data-id="${c.id}">`;
-        /* Subtle inner light */
         h+=`<div style="position:absolute;top:0;right:0;width:80px;height:80px;border-radius:50%;background:rgba(255,255,255,.1);transform:translate(20px,-20px)"></div>`;
         h+=`<div style="position:absolute;bottom:0;left:0;width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.05);transform:translate(-15px,15px)"></div>`;
         if(c.pwd)h+=`<div style="position:absolute;top:10px;right:10px;width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-size:10px;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)">🔒</div>`;
@@ -281,7 +309,6 @@ function mainHTML(){
   }
   h+=`</div>`;
 
-  /* ── FAB ── */
   h+=`<button data-a="admin" class="ios-btn" style="position:fixed;bottom:28px;right:20px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#007AFF,#5856D6);color:#fff;font-size:20px;box-shadow:0 4px 16px rgba(0,122,255,.3);z-index:30;animation:glow 2.5s ease-in-out infinite">⚙️</button>`;
 
   h+=`</div>`;
@@ -294,7 +321,6 @@ function mainHTML(){
 function settingsHTML(){
   let h=`<div style="min-height:100vh;background:var(--bg)">`;
 
-  /* Nav */
   h+=`<div class="glass hairline" style="position:sticky;top:0;z-index:30;padding:52px 20px 12px;display:flex;align-items:center;justify-content:space-between">`;
   h+=`<div><div class="sf-large" style="font-size:28px">⚙️ 設定</div></div>`;
   h+=`<button data-a="back" class="ios-btn" style="font-size:15px;font-weight:600;color:var(--blue);background:none;padding:8px 0">← 返回</button>`;
@@ -302,20 +328,16 @@ function settingsHTML(){
 
   h+=`<div style="padding:16px 16px 120px;max-width:500px;margin:0 auto">`;
 
-  /* ── Hub Settings Group ── */
   h+=`<div style="margin-bottom:28px" class="spring">`;
   h+=`<div style="padding:0 16px 6px"><span class="sf-footnote" style="text-transform:uppercase;letter-spacing:.5px">Hub 基本設定</span></div>`;
   h+=`<div class="ios-card" style="overflow:hidden">`;
-  /* Title */
   h+=iosField('標題','hTitle',S.set.title,'Team Hub');
   h+=`<div style="margin-left:16px" class="hairline"></div>`;
-  /* Subtitle */
   h+=iosField('副標題','hSub',S.set.sub,'簡單描述');
   h+=`</div>`;
   h+=`<div style="padding:6px 16px 0"><span class="sf-footnote">呢個標題同副標題會顯示喺 Hub 最頂。</span></div>`;
   h+=`</div>`;
 
-  /* ── PIN Group ── */
   h+=`<div style="margin-bottom:28px" class="spring" style="animation-delay:.05s">`;
   h+=`<div style="padding:0 16px 6px"><span class="sf-footnote" style="text-transform:uppercase;letter-spacing:.5px">🔐 管理員 PIN</span></div>`;
   h+=`<div class="ios-card" style="overflow:hidden">`;
@@ -332,10 +354,8 @@ function settingsHTML(){
   h+=`<div style="padding:6px 16px 0"><span class="sf-footnote">設定後每次入設定頁面都需要輸入 6 位 PIN。</span></div>`;
   h+=`</div>`;
 
-  /* Save */
   h+=`<button data-a="saveSet" class="ios-btn spring" style="width:100%;padding:16px;border-radius:14px;font-size:16px;font-weight:700;color:#fff;background:linear-gradient(135deg,#007AFF,#5856D6);box-shadow:0 4px 16px rgba(0,122,255,.25);margin-bottom:32px">💾 儲存設定</button>`;
 
-  /* ── Notices Group ── */
   h+=`<div style="margin-bottom:28px" class="spring">`;
   h+=`<div style="padding:0 16px 6px;display:flex;align-items:center;justify-content:space-between"><span class="sf-footnote" style="text-transform:uppercase;letter-spacing:.5px">📢 公告管理</span><span style="font-size:11px;font-weight:700;color:var(--blue);background:rgba(0,122,255,.08);padding:2px 8px;border-radius:6px">${S.notices.length} 個</span></div>`;
   h+=`<div class="ios-card" style="overflow:hidden">`;
@@ -360,7 +380,6 @@ function settingsHTML(){
   h+=`<button data-a="addN" class="ios-btn" style="width:100%;margin-top:10px;padding:14px;border-radius:14px;font-size:15px;font-weight:600;color:var(--blue);background:var(--card);box-shadow:0 .5px 1px rgba(0,0,0,.04)">＋ 新增公告</button>`;
   h+=`</div>`;
 
-  /* ── Cards Group ── */
   h+=`<div style="margin-bottom:28px" class="spring">`;
   h+=`<div style="padding:0 16px 6px;display:flex;align-items:center;justify-content:space-between"><span class="sf-footnote" style="text-transform:uppercase;letter-spacing:.5px">📱 卡片管理</span><span style="font-size:11px;font-weight:700;color:var(--blue);background:rgba(0,122,255,.08);padding:2px 8px;border-radius:6px">${S.cards.length} 個</span></div>`;
   h+=`<div class="ios-card" style="overflow:hidden">`;
@@ -398,7 +417,7 @@ function iosField(label,id,val,ph){
 }
 
 /* ═══════════════════════════════════════════ */
-/*  MODALS (iOS Sheet Style)                   */
+/*  MODALS                                     */
 /* ═══════════════════════════════════════════ */
 
 function pinHTML(){
@@ -429,6 +448,8 @@ function pinHTML(){
   h+=`<div style="font-size:13px;color:var(--sub);margin-bottom:20px">${sub}</div>`;
   h+=`<div style="display:flex;justify-content:center;gap:14px;margin-bottom:8px">${dots}</div>`;
   if(S._pinErr)h+=`<div style="color:var(--red);font-size:13px;font-weight:600;margin-top:8px">${isLogin?'PIN 錯誤':'兩次唔一樣，重新嚟過'}</div>`;
+  /* Keyboard hint for PC users */
+  h+=`<div style="font-size:11px;color:var(--sub);margin-top:12px;opacity:.6">⌨️ 可直接用鍵盤輸入數字</div>`;
   h+=`</div>`;
 
   h+=`<div style="padding:20px 48px 24px;max-width:340px;margin:0 auto">`;
@@ -452,14 +473,12 @@ function editHTML(){
 
   h+=`<div style="padding:20px 16px 40px">`;
 
-  /* Preview */
   h+=`<div style="display:flex;justify-content:center;margin-bottom:20px">`;
   h+=`<div style="width:110px;border-radius:18px;padding:18px;position:relative;overflow:hidden;background:${gr.bg};box-shadow:0 4px 16px ${gr.shadow}">`;
   h+=`<div style="position:absolute;top:0;right:0;width:60px;height:60px;border-radius:50%;background:rgba(255,255,255,.1);transform:translate(15px,-15px)"></div>`;
   h+=`<div style="position:relative;text-align:center"><div style="font-size:32px;margin-bottom:6px">${c.icon||'📱'}</div>`;
   h+=`<div style="font-size:12px;font-weight:700;color:#fff">${esc(c.name)||'預覽'}</div></div></div></div>`;
 
-  /* Emoji picker */
   h+=`<div style="margin-bottom:16px"><div style="padding:0 4px 6px"><span class="sf-footnote" style="text-transform:uppercase;letter-spacing:.5px">圖示</span></div>`;
   h+=`<div class="ios-card" style="padding:10px;display:flex;flex-wrap:wrap;gap:4px;max-height:110px;overflow-y:auto" class="scroll-hide">`;
   EMOJIS.forEach(e=>{
@@ -468,7 +487,6 @@ function editHTML(){
   });
   h+=`</div></div>`;
 
-  /* Color picker */
   h+=`<div style="margin-bottom:16px"><div style="padding:0 4px 6px"><span class="sf-footnote" style="text-transform:uppercase;letter-spacing:.5px">顏色</span></div>`;
   h+=`<div class="ios-card" style="padding:12px;display:flex;flex-wrap:wrap;gap:8px">`;
   Object.entries(GRADS).forEach(([k,v])=>{
@@ -477,7 +495,6 @@ function editHTML(){
   });
   h+=`</div></div>`;
 
-  /* Fields */
   h+=`<div style="margin-bottom:16px"><div style="padding:0 4px 6px"><span class="sf-footnote" style="text-transform:uppercase;letter-spacing:.5px">資料</span></div>`;
   h+=`<div class="ios-card" style="overflow:hidden">`;
   h+=iosField('名稱 *','eName',c.name,'例如：Daily Report');
